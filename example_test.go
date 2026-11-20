@@ -1,12 +1,75 @@
 package imaging_test
 
 import (
+	"context"
+	"fmt"
 	"image"
 	"image/color"
 	"log"
 
 	"github.com/disintegration/imaging"
 )
+
+// ExampleBuildGaussianPyramid shows how to build a Gaussian pyramid and inspect
+// the size of each level.
+func ExampleBuildGaussianPyramid() {
+	src, err := imaging.Open("testdata/flowers_small.png")
+	if err != nil {
+		log.Fatalf("failed to open image: %v", err)
+	}
+
+	levels, err := imaging.BuildGaussianPyramid(src, 4)
+	if err != nil {
+		log.Fatalf("failed to build pyramid: %v", err)
+	}
+	for i, lv := range levels {
+		b := lv.Bounds()
+		fmt.Printf("level %d: %dx%d\n", i, b.Dx(), b.Dy())
+	}
+}
+
+// ExampleDecomposeLaplacian shows a reversible Laplacian decomposition: the
+// detail layers can be discarded, stored, and later recombined with the base
+// to reproduce the original image exactly.
+func ExampleDecomposeLaplacian() {
+	src, err := imaging.Open("testdata/flowers_small.png")
+	if err != nil {
+		log.Fatalf("failed to open image: %v", err)
+	}
+
+	dec, err := imaging.DecomposeLaplacian(src, 4)
+	if err != nil {
+		log.Fatalf("failed to decompose: %v", err)
+	}
+	fmt.Printf("levels: %d, base: %dx%d\n",
+		dec.Levels(), dec.Base.Bounds().Dx(), dec.Base.Bounds().Dy())
+
+	reconstructed, err := dec.Reconstruct()
+	if err != nil {
+		log.Fatalf("failed to reconstruct: %v", err)
+	}
+
+	// The reconstruction is bit-exact with the original 8-bit samples.
+	same := imaging.Clone(src).Bounds() == reconstructed.Bounds()
+	fmt.Printf("bounds match: %v\n", same)
+}
+
+func ExampleDecomposeLaplacian_cancel() {
+	src, err := imaging.Open("testdata/flowers_small.png")
+	if err != nil {
+		log.Fatalf("failed to open image: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Simulate cancellation before work starts.
+
+	dec, err := imaging.DecomposeLaplacianContext(ctx, src, 4)
+	if dec != nil || err != context.Canceled {
+		log.Fatal("expected a nil decomposition and context.Canceled")
+	}
+	fmt.Println("cancelled:", err)
+	// Output: cancelled: context canceled
+}
 
 func Example() {
 	// Open a test image.

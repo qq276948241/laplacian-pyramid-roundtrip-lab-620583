@@ -139,6 +139,47 @@ Original image                     | Hue = 60                                   
 -----------------------------------|----------------------------------------------|---------------------------------------------
 ![srcImage](testdata/flowers_small.png) | ![dstImage](testdata/out_hue_p60.png) | ![dstImage](testdata/out_hue_m60.png)
 
+### Multi-scale decomposition (Gaussian and Laplacian pyramids)
+
+Build a Gaussian pyramid. Level 0 is a copy of the source and each following
+level is half the size (rounded up, so odd rows and columns are never dropped):
+
+```go
+levels, err := imaging.BuildGaussianPyramid(srcImage, 4)
+if err != nil {
+    log.Fatal(err)
+}
+for i, lv := range levels {
+    b := lv.Bounds() // always origin-normalized: image.Rect(0, 0, w, h)
+    fmt.Printf("level %d: %dx%d\n", i, b.Dx(), b.Dy())
+}
+```
+
+Decompose into reversible Laplacian detail layers plus a Gaussian base, then
+reconstruct the original image exactly:
+
+```go
+dec, err := imaging.DecomposeLaplacian(srcImage, 4)
+if err != nil {
+    log.Fatal(err)
+}
+reconstructed, err := dec.Reconstruct() // bit-exact with the source samples
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+The decomposition uses a fixed, normalized 3x3 Gaussian analysis kernel and
+`imaging.Box` for down/up-sampling, filters in premultiplied alpha space so RGB
+hidden under transparent pixels never bleeds, replicates edge pixels, rounds
+with `floor(x+0.5)`, and saturates to `[0, 255]`. Reconstruction error is zero
+for every R, G, B and A sample. Requesting more levels than the image can be
+downsampled returns `imaging.ErrTooManyLevels`, nil or empty images return
+`imaging.ErrNilImage` / `imaging.ErrEmptyImage`, and oversized images return
+`imaging.ErrImageTooLarge` before any large buffer is allocated. The
+`...Context` variants accept a `context.Context` and never return partial
+results. Neither call modifies the source image.
+
 ## FAQ
 
 ### Incorrect image orientation after processing (e.g. an image appears rotated after resizing)
